@@ -81,8 +81,6 @@ pub fn declination(lat: f64, lon: f64, alt: u32, date: time::Date) -> Result<Fie
     let model = &MODELS[i];
     let next_model = MODELS.get(i + 1);
 
-    eprintln!("{:#?}", model);
-
     let mut gha = [0f64; 13 * (13 + 2) + 1];
     let mut ghb = [0f64; 13 * (13 + 2) + 1];
 
@@ -97,6 +95,7 @@ pub fn declination(lat: f64, lon: f64, alt: u32, date: time::Date) -> Result<Fie
             model.gh2,
             &mut gha,
         );
+
         interpsh(
             date + 1.0,
             model.yrmin,
@@ -254,14 +253,14 @@ fn extrapsh(
         Ordering::Greater => {
             let k = nmax2 * (nmax2 + 2);
             let l = nmax1 * (nmax1 + 2);
-            gh[(k + 1)..l].clone_from_slice(&gh1[(k + 1)..l]);
+            gh[(k + 1)..=l].clone_from_slice(&gh1[(k + 1)..=l]);
             let nmax = nmax1;
             (k, nmax)
         }
         Ordering::Less => {
             let k = nmax1 * (nmax1 + 2);
             let l = nmax2 * (nmax2 + 2);
-            for i in (k + 1)..l {
+            for i in (k + 1)..=l {
                 gh[i] = factor * gh2[i];
             }
             let nmax = nmax2;
@@ -269,8 +268,8 @@ fn extrapsh(
         }
     };
 
-    for i in 1..k {
-        gh[i] = gh1[i] + factor * gh2[i];
+    for i in 1..=k {
+        gh[i] = gh1[i] + factor * gh2.get(i).unwrap_or(&0.0);
     }
 
     nmax
@@ -297,7 +296,7 @@ fn interpsh(
         Ordering::Greater => {
             let k = nmax2 * (nmax2 + 2);
             let l = nmax1 * (nmax1 + 2);
-            for i in (k + 1)..l {
+            for i in (k + 1)..=l {
                 gh[i] = gh1[i] + factor * -gh1[i];
             }
             let nmax = nmax1;
@@ -306,7 +305,7 @@ fn interpsh(
         Ordering::Less => {
             let k = nmax1 * (nmax1 + 2);
             let l = nmax2 * (nmax2 + 2);
-            for i in (k + 1)..l {
+            for i in (k + 1)..=l {
                 gh[i] = factor * gh2[i];
             }
             let nmax = nmax2;
@@ -314,7 +313,7 @@ fn interpsh(
         }
     };
 
-    for i in 1..k {
+    for i in 1..=k {
         gh[i] = gh1[i] + factor * (gh2[i] - gh1[i]);
     }
 
@@ -411,9 +410,9 @@ fn shval3(
     let mut fn_ = 0.0;
     let mut fm = 0.0;
 
-    for k in 1..=npq {
-        let mut rr = 0.0;
+    let mut rr = 0.0;
 
+    for k in 1..=npq {
         if n < m {
             m = 0;
             n = n + 1;
@@ -456,6 +455,7 @@ fn shval3(
             cc = aa * cl[m] + bb * sl[m];
             x = x + cc * q[k];
             z = z - cc * p[k];
+
             if clat > 0.0 {
                 y += (aa * sl[m] - bb * cl[m]) * fm * p[k] / ((fn_ + 1.0) * clat);
             } else {
@@ -527,16 +527,153 @@ pub enum Error {
 mod tests {
     use super::*;
 
+    impl Field {
+        fn rounded(mut self) -> Self {
+            self.d = (self.d * 100.0).round() / 100.0;
+            self.i = (self.i * 100.0).round() / 100.0;
+            self.h = (self.h * 100.0).round() / 100.0;
+            self.f = (self.f * 100.0).round() / 100.0;
+            self.x = (self.x * 100.0).round() / 100.0;
+            self.y = (self.y * 100.0).round() / 100.0;
+            self.z = (self.z * 100.0).round() / 100.0;
+            self.ddot = (self.ddot * 100.0).round() / 100.0;
+            self.fdot = (self.fdot * 100.0).round() / 100.0;
+            self.hdot = (self.hdot * 100.0).round() / 100.0;
+            self.idot = (self.idot * 100.0).round() / 100.0;
+            self.xdot = (self.xdot * 100.0).round() / 100.0;
+            self.ydot = (self.ydot * 100.0).round() / 100.0;
+            self.zdot = (self.zdot * 100.0).round() / 100.0;
+            self
+        }
+    }
+
+    #[test]
+    fn test_gh2_max2_gt_zero() {
+        let model = &MODELS[MODELS.len() - 1];
+        assert_eq!(model.max2, 8);
+
+        let expected = &vec![
+            0.00, 5.70, 7.40, -25.90, -11.00, -7.00, -30.20, -2.10, -22.40, 2.20, -5.90, 6.00,
+            3.10, -1.10, -12.00, 0.50, -1.20, -1.60, -0.10, -5.90, 6.50, 5.20, 3.60, -5.10, -5.00,
+            -0.30, 0.50, 0.00, -0.60, 2.50, 0.20, -0.60, 1.30, 3.00, 0.90, 0.30, -0.50, -0.30,
+            0.00, 0.40, -1.60, 1.30, -1.30, -1.40, 0.80, 0.00, 0.00, 0.90, 1.00, -0.10, -0.20,
+            0.60, 0.00, 0.60, 0.70, -0.80, 0.10, -0.20, -0.50, -1.10, -0.80, 0.10, 0.80, 0.30,
+            0.00, 0.10, -0.20, -0.10, 0.60, 0.40, -0.20, -0.10, 0.50, 0.40, -0.30, 0.30, -0.40,
+            -0.10, 0.50, 0.40,
+        ];
+        for i in 0..expected.len() {
+            assert!(
+                (expected[i] - model.gh2[i]).abs() < 0.000001,
+                "{} != {}",
+                expected[i],
+                model.gh2[i],
+            );
+        }
+    }
+
+    #[test]
+    fn test_interpsh() {
+        let model = &MODELS[19];
+
+        let next_model = &MODELS[20];
+        let mut gha = [0f64; 13 * (13 + 2) + 1];
+
+        let nmax = interpsh(
+            1999.0,
+            model.yrmin,
+            model.max1,
+            next_model.yrmin,
+            next_model.max1,
+            model.gh1,
+            model.gh2,
+            &mut gha,
+        );
+        assert_eq!(nmax, 13);
+
+        let expected = &vec![
+            0.00, -29633.92, -1739.36, 5210.08, -2254.16, 3068.72, -2458.48, 1672.92, -449.00,
+            1338.68, -2283.80, -234.48, 1251.48, 295.12, 723.40, -478.28, 933.84, 785.44, 270.48,
+            258.00, -232.72, -406.00, 115.24, 113.44, -304.24, -217.84, 351.52, 44.24, 224.84,
+            170.52, -127.92, -135.08, -168.08, -42.44, -13.72, 106.44, 71.44, 67.96, -17.32, 72.96,
+            65.36, -162.72, 65.48, -4.92, -60.56, 17.32, 0.76, -90.92, 42.24, 78.60, -73.60,
+            -65.48, 0.20, -24.36, 32.24, 5.76, 8.28, 24.00, 6.32, 15.24, 7.44, -25.12, -1.36,
+            -5.84, 24.52, 6.48, 11.72, -8.56, -21.40, -8.12, 8.40, -16.08, -21.80, 9.08, 15.40,
+            6.80, 9.32, -7.32, -15.12, -7.00, -2.48, 4.80, 9.32, -19.76, 3.00, 13.72, -8.72, 12.40,
+            6.64, -6.16, -8.72, -8.32, -1.40, 8.32, 9.44, 4.04, -3.84, -8.16, -8.16, 4.44, -2.68,
+            -6.00, 1.56, 1.76, 0.00, -3.28, 4.00, -0.60, 4.92, 3.76, -5.72, 1.20, -1.16, 2.00,
+            -2.72, 4.36, 0.36, 0.44, -2.16, -0.88, -7.32, 2.16, -1.36, 0.08, -1.52, 1.04, 1.20,
+            -0.72, -0.08, -2.08, 0.08, 0.72, -0.56, -0.56, 0.56, -2.24, 1.36, -0.72, 0.08, -0.96,
+            0.96, -1.52, 3.20, -0.72, -1.76, -0.24, -0.32, 0.16, 0.24, 0.72, 2.00, -0.16, -2.08,
+            0.72, 0.56, -0.40, 0.24, 0.24, 0.00, -0.24, 0.00, -0.32, 0.24, -0.08, -0.72, -0.16,
+            -0.32, -0.32, 0.64, -0.16, -0.72, -0.72, 0.24, 0.16, 0.08, 1.44, -0.32, -0.32, 1.04,
+            -0.80, -0.32, -0.08, 0.56, 0.56, -0.32, 0.24, 0.24, 0.48, -0.08, 0.24, 0.32, -0.16,
+            0.00, -0.40, 0.08, -0.72,
+        ];
+        for i in 0..expected.len() {
+            assert!(
+                (expected[i] - gha[i]).abs() < 0.000001,
+                "{} != {}",
+                expected[i],
+                gha[i],
+            );
+        }
+    }
+
     #[test]
     fn test_declination() {
-        // TODO: compare with
-        // geomag70.exe IGRF13.COF 1999.0 D M100 41.60911536877931 41.6009718546448
         let field = declination(
             41.60911536877931,
             41.6009718546448,
             100,
             time::Date::try_from_yo(1999, 1).unwrap(),
         );
-        assert_eq!(field, Err(Error::InvalidYear));
+        assert_eq!(
+            field.unwrap().rounded(),
+            Field {
+                d: 5.09,
+                i: 59.75,
+                h: 24423.68,
+                f: 48476.78,
+                x: 24327.52,
+                y: 2165.15,
+                z: 41874.6,
+                ddot: 3.53,
+                fdot: 11.65,
+                hdot: -7.77,
+                idot: 1.12,
+                xdot: -9.97,
+                ydot: 24.25,
+                zdot: 18.01,
+            }
+        );
+    }
+
+    #[test]
+    fn test_declination_year_out_of_range() {
+        let field = declination(
+            41.60911536877931,
+            41.6009718546448,
+            100,
+            time::Date::try_from_yo(2026, 1).unwrap(),
+        );
+        assert_eq!(
+            field.unwrap().rounded(),
+            Field {
+                d: 7.16,
+                i: 60.77,
+                h: 24339.67,
+                f: 49843.94,
+                x: 24149.84,
+                y: 3033.95,
+                z: 43497.12,
+                ddot: 4.51,
+                fdot: 74.67,
+                hdot: 3.16,
+                idot: 2.63,
+                xdot: -0.87,
+                ydot: 32.04,
+                zdot: 83.78,
+            }
+        );
     }
 }

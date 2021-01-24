@@ -60,6 +60,9 @@ fn main() {
         let mut gh1 = Vec::with_capacity(model.max1);
         let mut gh2 = Vec::with_capacity(model.max2);
 
+        gh1.push(0.0);
+        gh2.push(0.0);
+
         'outer: loop {
             if let Some(line) = lines.peek() {
                 if line.starts_with("   ") {
@@ -93,6 +96,7 @@ fn main() {
         }
 
         model.gh1 = gh1;
+        model.gh2 = gh2;
         models.push(model);
     }
 
