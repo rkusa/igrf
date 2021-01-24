@@ -1,10 +1,5 @@
-#![allow(unused)]
+#![allow(clippy::many_single_char_names, clippy::clippy::too_many_arguments)]
 
-// Sources:
-// - https://www.ngdc.noaa.gov/IAGA/vmod/igrf.html
-// - https://github.com/nsdecicco/libgeomag
-
-use std::borrow::Cow;
 use std::cmp::Ordering;
 
 #[derive(Debug, PartialEq)]
@@ -69,8 +64,8 @@ pub fn declination(lat: f64, lon: f64, alt: u32, date: time::Date) -> Result<Fie
     let alt = f64::from(alt) / 1_000.0; // form meters to km
     let date = decimal_day_of_year(date);
 
-    let min_year = MODELS[0].yrmin;
-    let max_year = MODELS[0].yrmin;
+    let min_year = MODELS.first().map(|m| m.yrmin).unwrap_or(9999.0);
+    let max_year = MODELS.last().map(|m| m.yrmax).unwrap_or(0.0);
     let is_date_in_range = (min_year..max_year).contains(&date);
 
     let i = MODELS
@@ -133,7 +128,7 @@ pub fn declination(lat: f64, lon: f64, alt: u32, date: time::Date) -> Result<Fie
     const EXT_COEFF3: f64 = 0.0;
 
     // Do the first calculations
-    let (mut x, mut y, mut z) = shval3(
+    let (mut x, mut y, z) = shval3(
         lat,
         lon,
         alt,
@@ -177,27 +172,25 @@ pub fn declination(lat: f64, lon: f64, alt: u32, date: time::Date) -> Result<Fie
     let zdot = ztemp - z;
     let fdot = ftemp - f;
 
-    /* Deal with geographic and magnetic poles */
+    // Deal with geographic and magnetic poles
     if h < 100.0
-    /* at magnetic poles */
+    // at magnetic poles
     {
         d = f64::NAN;
         ddot = f64::NAN;
-        /* while rest is ok */
     }
 
-    /* at geographic poles */
-    if (90.0 - lat.abs() <= 0.001) {
+    // at geographic poles
+    if 90.0 - lat.abs() <= 0.001 {
         x = f64::NAN;
         y = f64::NAN;
         d = f64::NAN;
         xdot = f64::NAN;
         ydot = f64::NAN;
         ddot = f64::NAN;
-        /* while rest is ok */
     }
 
-    Ok(Field {
+    let field = Field {
         d,
         i,
         h,
@@ -212,7 +205,13 @@ pub fn declination(lat: f64, lon: f64, alt: u32, date: time::Date) -> Result<Fie
         xdot,
         ydot,
         zdot,
-    })
+    };
+
+    if is_date_in_range {
+        Ok(field)
+    } else {
+        Err(Error::DateOutOfRange(field))
+    }
 }
 
 fn decimal_day_of_year(date: time::Date) -> f64 {
@@ -344,7 +343,6 @@ fn shval3(
     // geodetic and geocentric coordinates.
     let b2 = 40408299.98;
 
-    let r = elev;
     let argument = flat * dtr;
     let slat = argument.sin();
 
@@ -371,8 +369,6 @@ fn shval3(
     let mut y = 0.0;
     let mut z = 0.0;
 
-    let sd = 0.0;
-    let cd = 1.0;
     let mut l = 1;
     let mut n: usize = 0;
     let mut m: usize = 1;
@@ -408,14 +404,14 @@ fn shval3(
     q[4] = aa * (slat * slat - clat * clat);
 
     let mut fn_ = 0.0;
-    let mut fm = 0.0;
+    let mut fm;
 
     let mut rr = 0.0;
 
     for k in 1..=npq {
         if n < m {
             m = 0;
-            n = n + 1;
+            n += 1;
             rr = ratio.powi(n as i32 + 2);
             fn_ = n as f64;
         }
@@ -424,7 +420,7 @@ fn shval3(
 
         if k >= 5 {
             if m == n {
-                let argument = (1.0 - 0.5 / fm);
+                let argument = 1.0 - 0.5 / fm;
                 aa = argument.sqrt();
                 let j = k - n - 1;
                 p[k] = (1.0 + 1.0 / fm) * aa * clat * p[j];
@@ -446,27 +442,27 @@ fn shval3(
 
         aa = rr * gh[l];
 
-        if (m == 0) {
+        if m == 0 {
             x += aa * q[k];
             z -= aa * p[k];
-            l = l + 1;
+            l += 1;
         } else {
             bb = rr * gh[l + 1];
             cc = aa * cl[m] + bb * sl[m];
-            x = x + cc * q[k];
-            z = z - cc * p[k];
+            x += cc * q[k];
+            z -= cc * p[k];
 
             if clat > 0.0 {
                 y += (aa * sl[m] - bb * cl[m]) * fm * p[k] / ((fn_ + 1.0) * clat);
             } else {
                 y += (aa * sl[m] - bb * cl[m]) * q[k] * slat;
             }
-            l = l + 2;
+            l += 2;
         }
-        m = m + 1;
+        m += 1;
     }
 
-    if (iext != 0) {
+    if iext != 0 {
         aa = ext2 * cl[1] + ext3 * sl[1];
         x = x - ext1 * clat + aa * slat;
         y = y + ext2 * sl[1] - ext3 * cl[1];
@@ -483,26 +479,24 @@ fn shval3(
 /// Computes the geomagnetic declination (d), inclination (i), horizontal field strength (h), and
 /// total field strength (f) from x, y, and z.
 fn dihf(x: f64, y: f64, z: f64) -> (f64, f64, f64, f64) {
-    let mut sn = 0.0;
-    let mut hpx = 0.0;
+    let sn = 0.0001;
+    let hpx;
 
-    sn = 0.0001;
-
-    let mut d = 0.0;
-    let mut i = 0.0;
-    let mut h = (x * x + y * y).sqrt(); /* calculate horizontal intensity */
-    let mut f = (x * x + y * y + z * z).sqrt(); /* calculate total intensity */
-    if (f < sn) {
+    let d;
+    let i;
+    let h = (x * x + y * y).sqrt(); // calculate horizontal intensity
+    let f = (x * x + y * y + z * z).sqrt(); // calculate total intensity
+    if f < sn {
         // If d and i cannot be determined, set them equal to NaN.
         d = f64::NAN;
         i = f64::NAN;
     } else {
         i = z.atan2(h);
-        if (h < sn) {
+        if h < sn {
             d = f64::NAN;
         } else {
             hpx = h + x;
-            if (hpx < sn) {
+            if hpx < sn {
                 d = std::f64::consts::PI;
             } else {
                 d = 2.0 * y.atan2(hpx);
@@ -515,8 +509,8 @@ fn dihf(x: f64, y: f64, z: f64) -> (f64, f64, f64, f64) {
 
 #[derive(Debug, thiserror::Error, PartialEq)]
 pub enum Error {
-    #[error("Year must be between 1900 and 2030")]
-    InvalidYear,
+    #[error("Date must be between 1900-01-01 and 2025-12-31")]
+    DateOutOfRange(Field),
     #[error("Latitude is out of bounds")]
     LatitudeOutOfBounds,
     #[error("Longitude is out of bounds")]
@@ -561,11 +555,11 @@ mod tests {
             0.00, 0.10, -0.20, -0.10, 0.60, 0.40, -0.20, -0.10, 0.50, 0.40, -0.30, 0.30, -0.40,
             -0.10, 0.50, 0.40,
         ];
-        for i in 0..expected.len() {
+        for (i, e) in expected.iter().enumerate() {
             assert!(
-                (expected[i] - model.gh2[i]).abs() < 0.000001,
+                (e - model.gh2[i]).abs() < 0.000001,
                 "{} != {}",
-                expected[i],
+                e,
                 model.gh2[i],
             );
         }
@@ -626,9 +620,10 @@ mod tests {
             41.6009718546448,
             100,
             time::Date::try_from_yo(1999, 1).unwrap(),
-        );
+        )
+        .unwrap();
         assert_eq!(
-            field.unwrap().rounded(),
+            field.rounded(),
             Field {
                 d: 5.09,
                 i: 59.75,
@@ -656,8 +651,12 @@ mod tests {
             100,
             time::Date::try_from_yo(2026, 1).unwrap(),
         );
+        let field = match field {
+            Err(Error::DateOutOfRange(field)) => field,
+            _ => unreachable!(),
+        };
         assert_eq!(
-            field.unwrap().rounded(),
+            field.rounded(),
             Field {
                 d: 7.16,
                 i: 60.77,
