@@ -1,6 +1,6 @@
 [package]
 name = "igrf"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Markus Ast <m@rkusa.st>"]
 edition = "2018"
 description = "International Geomagnetic Reference Field (IGRF) implementation in pure Rust."
@@ -10,4 +10,4 @@ license = "MIT"
 
 [dependencies]
 thiserror = "1.0"
-time = "0.2"
+time = "0.3"

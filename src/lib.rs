@@ -619,7 +619,7 @@ mod tests {
             41.60911536877931,
             41.6009718546448,
             100,
-            time::Date::try_from_yo(1999, 1).unwrap(),
+            time::Date::from_ordinal_date(1999, 1).unwrap(),
         )
         .unwrap();
         assert_eq!(
@@ -649,7 +649,7 @@ mod tests {
             41.60911536877931,
             41.6009718546448,
             100,
-            time::Date::try_from_yo(2026, 1).unwrap(),
+            time::Date::from_ordinal_date(2026, 1).unwrap(),
         );
         let field = match field {
             Err(Error::DateOutOfRange(field)) => field,
